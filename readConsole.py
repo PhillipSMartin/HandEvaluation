@@ -74,7 +74,10 @@ def processF(*args):
         if len(args) > 1:
             feature = globals.getFeatureNumber(args[1])
         if (len(args) > 2) and (feature >= 0):
-            increment = int(args[2]) - getCurrentVector()[feature]
+            if feature in globals.fixed_features:
+                print('cannot modify fixed feature')
+            else:
+                increment = int(args[2]) - getCurrentVector()[feature]
     except ValueError:
         print('Feature value must be an integer')
     

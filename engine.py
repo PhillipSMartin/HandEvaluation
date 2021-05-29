@@ -180,6 +180,11 @@ def adjustFeature(vector : List[int], feature : int, increment : int) -> List[in
     # if necessary to maintain ordering contraints, adjust other features as well
     # this method is recursive
     # if it returns an empty vector, the adjustment could not be made because of contraints
+    
+    # ignore fixed features
+    if feature in globals.fixed_features:
+        return []
+    
     new_vector = vector.copy()
     new_vector[feature] += increment
     globals.debug(f'Adjusting {globals.getFeatureName(feature)} by {increment}, old={vector[feature]}, new={new_vector[feature]}')
@@ -237,9 +242,8 @@ def takeBabyStep(vector : List[int], accuracy : float, threshold : int, targets 
         bestVector = list(vectors_to_try[newAccuracies.index(bestAccuracy)])
  
         globals.info(f'{"Raising" if sum(bestVector) > sum(vector) else "Lowering"} weight ' +
-             f'for {globals.feature_names[newAccuracies.index(bestAccuracy) % len(vector)]}')
-        globals.info(f'columns changed = {globals.compareVectors(vector, bestVector)}')
-   
+             f'for {globals.compareVectors(vector, bestVector)}')
+    
        
     return (modified, bestVector, bestAccuracy)
 
