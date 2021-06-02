@@ -18,8 +18,6 @@ import numpy as np
 def calculatePointCount(features : np.ndarray, vectors : List[List[int]]) -> np.ndarray:
     # Features is an N x M matrix with N deals and M features per deal.
     # Vectors is a list of V vectors, each with M weights.
-    # Thresholds is either a scalar or a list of V thesholds, one for each vector.
-    #   It represents the point count for which we predict 3NT is makable.
     # The output of this method is an N x V  matrix containing the points for
     #   each deal as evaluated by each vector
     #
@@ -28,14 +26,15 @@ def calculatePointCount(features : np.ndarray, vectors : List[List[int]]) -> np.
     #   with the features matrix to get an N x V matrix of results.    
     return np.dot(features, np.column_stack(vectors))
 
-def calculateAccuracy(pointCounts : np.ndarray, thresholds : List[int], targets : np.ndarray) -> List[int]:
+def calculateAccuracy(pointCounts : np.ndarray, thresholds : np.ndarray, targets : np.ndarray) -> List[int]:
     # PointCounts is an N x V matrix containing the point count for each of N deals
     #   as evaulated by each of V vectors
     #   The matrix can be obtained by calling calculatePointCount.
-    # Thresholds is either a scalar or a list of V thesholds, one for each vector.
+    # Thresholds is an N x V matrix of thresholds for N deals and V vectors  
     #   It represents the point count for which we predict 3NT is makable.
-    # Targets is an N X 1 Boolean matrix, with True indicating 3NT makes for the
+    # Targets is an N x 1 matrix indication whether 3NT makes for the
     #   corresponding deal.
+    #
     # The output of this method is a V-element list containing the percentage of
     #   accurate predictions for each vector
     #
@@ -43,18 +42,35 @@ def calculateAccuracy(pointCounts : np.ndarray, thresholds : List[int], targets 
     #   if the vth vector predicts 3NT makes for the nth deal. We take the
     #   exclusive or of this matrix with the target matrix, yielding True
     #   if the vector's prediction is incorrect and False if it is correct.
-    #   We then calculate the average number of Falses to get the percentage 
+    #   This is backwards from what we really want, but it's convenient, since
+    #   we then calculate the average number of Falses to get the percentage 
     #   of correct predictions.
     
     results = np.logical_xor(pointCounts >= thresholds, targets)
     return (1 - sum(results) / len(pointCounts)).tolist()
 
+def calculateExpectation(pointCounts : np.ndarray, thresholds : np.ndarray, targets : np.ndarray) -> List[int]:
+    # PointCounts is an N x V matrix containing the point count for each of N deals
+    #   as evaulated by each of V vectors
+    #   The matrix can be obtained by calling calculatePointCount.
+    # Thresholds is an N x V matrix of thresholds for N deals and V vectors  
+    #   It represents the point count for which we predict 3NT is makable.
+    # Targets is an N x 1 matrix indicating our score if we bid
+    #   3NT (the negative is our score if we don't bid 3NT)
+    #
+    # The output of this method is a V-element list containing the score for each vector
+    #
+    #   of correct predictions.
+    
+    bidGame = pointCounts >= thresholds
+    return (sum(bidGame * targets - ~bidGame * targets) / globals.number_of_deals).tolist()
+
 def calculateImpResults(pointCounts : np.ndarray, thresholds : np.ndarray, scores : np.ndarray) -> np.ndarray:
    # PointCounts is an N x V matrix containing the point count for each of N deals
     #   as evaulated by each of V vectors
     #   The matrix can be obtained by calling calculatePointCount.
-    # Thresholds is an N x V matrix contining the thresholds for bidding 3NT by
-    #   board number (possibily varying by vulnerability) and vector
+     # Thresholds is an N x V matrix of thresholds for N deals and V vectors  
+    #   It represents the point count for which we predict 3NT is makable.
     # Scores is an N X 1 matrix containing the imp score you receive if you play
     #   3NT and the other table plays 2NT
     # This method returns a recap sheet, that is, an N x V matrix where
@@ -73,28 +89,31 @@ def calculateImpResults(pointCounts : np.ndarray, thresholds : np.ndarray, score
     return  scores * np.apply_along_axis(lambda row: 
         [len(row) * x  - sum(row) for x in row], 1, 
         pointCounts >= thresholds)
-
-def calculateExpectation(pointCounts : np.ndarray, thresholds : np.ndarray, scores : np.ndarray) -> List[int]:
+ 
+def reportMatchResults(recapSheet : np.ndarray):
+    relevantBoards = recapSheet[np.prod(recapSheet, axis = 1) != 0]
+    return len(relevantBoards) / len(recapSheet), (np.average(relevantBoards, axis = 0) / (recapSheet.shape[1] - 1)).tolist()
+       
+def runSimulatedMatch(pointCounts : np.ndarray, thresholds : np.ndarray, scores : np.ndarray) -> List[int]:
     # PointCounts is an N x V matrix containing the point count for each of N deals
     #   as evaulated by each of V vectors
     #   The matrix can be obtained by calling calculatePointCount.
-    # Thresholds is an N x V matrix contining the thresholds for bidding 3NT by
-    #   board number (possibily varying by vulnerability) and vector
+    # Thresholds is an N x V matrix of thresholds for N deals and V vectors  
+    #   It represents the point count for which we predict 3NT is makable.
     # Scores is an N X 1 matrix containing the imp score you receive if you play
     #   3NT and the other table plays 2NT
+    #
     # The output of this method is a tuple consisting of
     #   1) the percentage of boards on which someone did something different
     #   2) a V-element list containing the average score per board each vector receives 
     #     if imped against each of the other vectors
-    #   3) a DataFrame categorizing the boards on which a strategy won or lost imps into the
-    #      categories 'good_game_nv', 'good_stop_nv', underbid_nv', 'underbid_vul', 
-    #      'good_game_vul', 'good_stop_vul', 'overbid_nv', 'overbid_vul'
     
-    recapSheet = calculateImpResults(pointCounts, thresholds, scores)
-    relevantBoards = recapSheet[np.prod(recapSheet, axis = 1) != 0]
-    
+    return reportMatchResults(calculateImpResults(pointCounts, thresholds, scores))
+
+# not current used but may wish to incorporate later
+def analyzeMatchResults(recapSheet : np.ndarray):
     categories = [int(x * 2 + y) for x, y in zip(globals.vulnerabilities, globals.targets)]   
-    analysis = pd.DataFrame( {'good_game_nv' :
+    return pd.DataFrame( {'good_game_nv' :
             sum((recapSheet > 0) * np.array([x == 1 for x in categories]).reshape(globals.number_of_deals, 1)),
         'good_stop_nv':
             sum((recapSheet > 0) * np.array([x == 0 for x in categories]).reshape(globals.number_of_deals, 1)),
@@ -111,11 +130,9 @@ def calculateExpectation(pointCounts : np.ndarray, thresholds : np.ndarray, scor
         'overbid_vul':
             sum((recapSheet < 0) * np.array([x == 2 for x in categories]).reshape(globals.number_of_deals, 1))},
         index = globals.getVectorNames())
-        
-    return len(relevantBoards) / len(recapSheet), np.average(relevantBoards, axis = 0).tolist(), analysis
            
 def calculateSuccessesByPointCount(targets : np.ndarray, pointCounts : np.ndarray) -> pd.core.frame.DataFrame:
-    # Targets is a 1 x n or n x 1 Boolean matrix specifying whether each deal makes 3NT
+    # Targets an n-element List specifying whether each deal makes 3NT
     # PointCounts is a matrix of the same dimension, containing the point count for each deal.
     #
     # The output of this method is a Series, indexed by point count.
@@ -128,26 +145,41 @@ def calculateSuccessesByPointCount(targets : np.ndarray, pointCounts : np.ndarra
     outcomes.drop(outcomes[outcomes.totals <  .2 * globals.number_of_deals / len(outcomes)].index, inplace = True)
     return pd.Series( outcomes.apply(lambda row: row.makes / row.totals, axis = 1))
 
+
 def calculatePointCountForTargetSuccessRate(successes : pd.Series, targetSuccessRate : float) -> int:
-    # Successes is a 2-column DataFrame, indexed by point count.
-    #   The 'success_rate' column contains the percentage of times 3NT makes for deals 
+    # Successes is a Series, indexed by point count.
+    #   The values contains the percentage of times 3NT makes for deals 
     #     with that point count.
-    #   The 'cum_success_rate' column contains the percentage of times 3NT makes for deals 
-    #     with at least that point count.
-    #   This DataFrame can be constructed by using the calculateSuccessesByPointCount method.
+    #   This Series can be constructed by using the calculateSuccessesByPointCount method.
     # TargetSuccessRate is the probability we need a game to succeed in order to bid it.
+    #
     # The output of this method is the minimum point count we should choose to bid a game
     #   that has the targetSuccessRate chance of making.
     return min(successes[successes >= targetSuccessRate].index)
     
 def calculateThresholdsByVulnerability(targets : np.ndarray, pointCounts : np.ndarray) -> Tuple[int, int]:
-    # Targets is a 1 x n or n x 1 Boolean matrix specifying whether each deal makes 3NT
+    # Targets an n-element List specifying whether each deal makes 3NT
     # PointCounts is a matrix of the same dimension, containing the point count for each deal.
+    #
     # The output of this method is a tuple, consisting of the minimum point counts we
-    #   need to bid a non-vul game and a vul game
+    #   need to bid a vul game and a non_vul game
     successes = calculateSuccessesByPointCount(targets, pointCounts)
     return (calculatePointCountForTargetSuccessRate(successes, VUL_PERCENTAGE_TARGET),
             calculatePointCountForTargetSuccessRate(successes, NV_PERCENTAGE_TARGET))
+
+def calculateAllThresholdsByVulnerability(targets : np.ndarray, pointCounts : np.ndarray) -> np.ndarray:
+    # Targets an n-element List specifying whether each deal makes 3NT
+    # PointCounts is a V x N matrix containing the point count for each deal and each vector
+    #
+    # The output of this method is a V x 2 matrix, consisting of the minimum point counts we
+    #   need to bid a vul game and a non_vul game for each vector
+    thresholds = np.empty
+    for v in range(pointCounts.shape[1]):
+        if thresholds is np.empty:
+            thresholds = calculateThresholdsByVulnerability(targets, pointCounts[:,v])
+        else:
+            thresholds = np.vstack((thresholds, calculateThresholdsByVulnerability(targets, pointCounts[:,v])))
+    return thresholds
 
 def bumpUp(vector : List[int], ordered_set : List[int], index : int, minValue : int) -> List[int]:
     # ordered_set[index] (if index is valid) must be at least minValue
@@ -210,20 +242,22 @@ def adjustFeature(vector : List[int], feature : int, increment : int) -> List[in
      
     return new_vector
 
-def takeBabyStep(vector : List[int], accuracy : float, threshold : int, targets : np.ndarray, increment : int) -> Tuple[bool, List[int], float]:
+def takeBabyStep(vector : List[int], payoff : float, threshold : np.ndarray,
+          targets : pd.core.frame.DataFrame, payoff_function, increment : int) -> Tuple[bool, List[int], float]:
     # Vector is an M-element list of feature weights
-    # Accuracy is the percentage of time this vector accurately classifies the current set of deal
-    # Thresholds is a scalar. If the HCP for a deal is greater than or equal to that ammount,
-    #   we classify the deal as '3NT makes.' Otherwise, we classify it as '3NT fails.'
-    # Targets is an N X 1 Boolean matrix, with True indicating 3NT makes for the
-    #   corresponding deal.
+    # Payoff is the current best payoff we are trying to beat
+    # Thresholds is an N x 1 matrix of thresholds  
+    #   It represents the point count for which we predict 3NT is makable.
+    # Targets is an N x 2 DataFrame. Which column will be used by the learning algorithm
+    #   depends on which payoff function we use
+    # Payoff_function calculates the particular payoff we wish to maximize
     # Increment is the amount by which we try changes in feature waits
     #
     # The output of this method is a tuple, consisting of a boolean indicating whether
     #   the vector has changed, the new vector, and the accuracy of this new vector
     modified = False
     bestVector = vector.copy()
-    bestAccuracy = accuracy
+    bestPayoff = payoff
     
     # vectors_to_try contains an array of vectors we wish to test
     # each column is the original vector with each feature weight in turn either 
@@ -232,42 +266,42 @@ def takeBabyStep(vector : List[int], accuracy : float, threshold : int, targets 
     vectors_to_try = list(filter(lambda v: len(v) > 0, 
         [adjustFeature(bestVector, n, increment) for n in range(len(bestVector))] + 
         [adjustFeature(bestVector, n, -increment) for n in range(len(bestVector))]))
-    newAccuracies = calculateAccuracy(calculatePointCount(globals.getFeatures(), vectors_to_try),
+    newPayoffs = payoff_function(calculatePointCount(globals.getFeatures(), vectors_to_try),
         threshold, targets)
     
     # see if we have a winner
-    if bestAccuracy < max(newAccuracies):
+    if bestPayoff < max(newPayoffs):
         modified = True
-        bestAccuracy = max(newAccuracies)
-        bestVector = list(vectors_to_try[newAccuracies.index(bestAccuracy)])
+        bestPayoff = max(newPayoffs)
+        bestVector = list(vectors_to_try[newPayoffs.index(bestPayoff)])
  
         globals.info(f'{"Raising" if sum(bestVector) > sum(vector) else "Lowering"} weight ' +
              f'for {globals.compareVectors(vector, bestVector)}')
-    
-       
-    return (modified, bestVector, bestAccuracy)
+        
+    return (modified, bestVector, bestPayoff)
 
-def learn(vector : List[int], threshold : np.ndarray, targets : np.ndarray,
-           starting_increment = 1) -> Tuple[List[int], float]:
+def learn(vector : List[int], pointCounts : np.ndarray, threshold : np.ndarray,
+          targets : pd.core.frame.DataFrame, payoff_function, starting_increment = 1) -> Tuple[List[int], float]:
     # Vector is an M-element list of feature weights
-    # Thresholds is a scalar. If the HCP for a deal is greater than or equal to that ammount,
-    #   we classify the deal as '3NT makes.' Otherwise, we classify it as '3NT fails.'
-    # Targets is an N X 1 Boolean matrix, with True indicating 3NT makes for the
-    #   corresponding deal.
+    # PointCounts is an N x 1 matrix containing the point count for each of N deals
+    # Thresholds is an N x 1 matrix of thresholds  
+    #   It represents the point count for which we predict 3NT is makable.
+    # Targets is an N x 2 DataFrame. Which column will be used by the learning algorithm
+    #   depends on which payoff function we use
+    # Payoff_function calculates the particular payoff we wish to maximize
     # Starting_increment is an optional parameter that permits us to start with an increment
     #   greater than one and reduce the increment as we get closer to a solution
     #
     # The output of this method is a tuple, consisting of a new vector of weights and
     #   the accuracy of that vector
     currentVector = vector.copy()
-    currentAccuracy = calculateAccuracy(calculatePointCount(globals.getFeatures(), [vector]),
-        threshold, targets)[0]
-    globals.info(f'iteration 0: vector={currentVector}, accuracy={currentAccuracy}')
+    currentPayoff = payoff_function(pointCounts, threshold, targets)[0]
+    globals.info(f'iteration 0: vector={currentVector}, payoff={currentPayoff}')
 
     increment = starting_increment
     for i in range(MAX_ITERATIONS):
-        modified, currentVector, currentAccuracy = takeBabyStep(currentVector, currentAccuracy, 
-            threshold, targets, increment)
+        modified, currentVector, currentPayoff = takeBabyStep(currentVector, currentPayoff, 
+            threshold, targets, payoff_function, increment)
         if not modified:
             if increment == 1:
                 break
@@ -275,6 +309,6 @@ def learn(vector : List[int], threshold : np.ndarray, targets : np.ndarray,
                 increment -= 1
                 print(f'iteration {i+1}:, No change - reducing increment to {increment}')
                 continue
-        globals.info(f'iteration {i+1}:, vector={currentVector}, accuracy={currentAccuracy}')
-    return currentVector, currentAccuracy
+        globals.info(f'iteration {i+1}:, vector={currentVector}, payoff={currentPayoff}')
+    return currentVector, currentPayoff
    

@@ -7,20 +7,18 @@ Created on Thu May 13 21:44:02 2021
 import pandas as pd
 import globals
 
-# append .csv to filename if not already there and if not an xlsx file
-def fixFileName(fileName : str) -> str:
-    if len(fileName) > 4:
-       if fileName[-4:] == '.csv':
-           return fileName
-       elif fileName[-5:] == '.xlsx':
-           return fileName
-    return fileName + '.csv'
+# append .csv to filename if we do not already have a valid extension
+def addDefaultExtension(fileName : str) -> str:
+    if fileName[-4:] == '.csv' or fileName[-5:] == '.xlsx':
+        return fileName
+    else:
+        return fileName + '.csv'
     
 
 # save DataFrame csv or xlsx file
 # returns True if write worked
 def writeFile(dataFrame : pd.core.frame.DataFrame, fileName : str, index=False) -> bool:
-    fileName = fixFileName(fileName)
+    fileName = addDefaultExtension(fileName)
     
     try:
         globals.info(f'Writing {fileName}')
@@ -41,7 +39,7 @@ def writeFile(dataFrame : pd.core.frame.DataFrame, fileName : str, index=False) 
 # returns an empty DataFrame if read fails
 def readFile(fileName : str, index=False) ->  pd.core.frame.DataFrame:
     dataFrame = pd.DataFrame()
-    fileName = fixFileName(fileName)
+    fileName = addDefaultExtension(fileName)
     
     try:
         if fileName[-4:] == '.csv':
@@ -108,27 +106,29 @@ def readData(fileName : str) -> pd.core.frame.DataFrame:
         deals['n_S'] = deals.apply(lambda row: row.north.index('H') - 3, axis = 1)
         deals['n_H'] = deals.apply(lambda row: row.north.index('D') - row.north.index('H') - 3, axis = 1)
         deals['n_D'] = deals.apply(lambda row: row.north.index('C') - row.north.index('D') - 3, axis = 1)
-        deals['n_C'] = deals.apply(lambda row: len(row.north) - row.north.index('C') - 2, axis = 1)
+        deals['n_C'] = deals.apply(lambda row: len(row.north) - row.north.index('C') - 3, axis = 1)
                   
         # South working variables
         deals['s_S'] = deals.apply(lambda row: row.south.index('H') - 3, axis = 1)
         deals['s_H'] = deals.apply(lambda row: row.south.index('D') - row.south.index('H') - 3, axis = 1)
         deals['s_D'] = deals.apply(lambda row: row.south.index('C') - row.south.index('D') - 3, axis = 1)
-        deals['s_C'] = deals.apply(lambda row: len(row.south) - row.south.index('C') - 2, axis = 1)
+        deals['s_C'] = deals.apply(lambda row: len(row.south) - row.south.index('C') - 3, axis = 1)
      
         # Features for both North and South   
         for feature in globals.feature_names[:globals.first_special_feature]:  # special features are not honor holding
             deals[feature] = deals.apply(lambda row: row.north.count(f':{feature} ') + row.south.count(f':{feature} '), axis = 1)
         
         if '5422' in globals.feature_names:
-            deals['5422'] = deals.apply(lambda row: int(row.n_S != 3 and row.n_H != 3 and 
-                    row.n_D != 3 and row.n_C != 3) + int(row.s_S != 3 and row.s_H != 3 and 
-                    row.s_D != 3 and row.s_C != 3), axis = 1)
+            deals['5422'] = deals.apply(lambda row: 
+                int(row.n_S in [5, 4, 2] and row.n_H in [5, 4, 2] and row.n_D in [5, 4, 2] and row.n_C in [5, 4, 2])
+                + int(row.s_S in [5, 4, 2] and row.s_H in [5, 4, 2] and row.s_D in [5, 4, 2] and row.s_C in [5, 4, 2]),
+                axis = 1)
         
         if '4333' in globals.feature_names:
-            deals['4333'] = deals.apply(lambda row: int(row.n_S > 2 and row.n_H > 2 and 
-                    row.n_D > 2 and row.n_C > 2) + int(row.s_S > 2 and row.s_H > 2 and 
-                    row.s_D > 2 and row.s_C > 2), axis = 1)
+            deals['4333'] = deals.apply(lambda row: 
+                int(row.n_S > 2 and row.n_H > 2 and row.n_D > 2 and row.n_C > 2) 
+                + int(row.s_S > 2 and row.s_H > 2 and row.s_D > 2 and row.s_C > 2),
+                axis = 1)
                                        
          
         # save processed data in a new file
