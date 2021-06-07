@@ -5,14 +5,18 @@ Created on Thu May 20 09:15:25 2021
 @author: sarab
 """
 
-import pandas as pd
+
 from collections import Counter
 from typing import List, Tuple
+
 import globals
+import log
+import pandas as pd
 
 VUL_PERCENTAGE_TARGET = .374
 NV_PERCENTAGE_TARGET = .455
 MAX_ITERATIONS = 500
+STARTING_INCREMENT = 10
 
 import numpy as np
 def calculatePointCount(features : np.ndarray, vectors : List[List[int]]) -> np.ndarray:
@@ -63,7 +67,16 @@ def calculateExpectation(pointCounts : np.ndarray, thresholds : np.ndarray, targ
     #   of correct predictions.
     
     bidGame = pointCounts >= thresholds
-    return (sum(bidGame * targets - ~bidGame * targets) / globals.number_of_deals).tolist()
+    return (sum(bidGame * targets - ~bidGame * targets) / globals.deals.number_of_deals).tolist()
+
+def calculatePayoff(pointCounts : np.ndarray, thresholds : np.ndarray, targets : np.ndarray) -> List[int]:
+     if globals.payoff_metric == 'expectation':
+         return calculateExpectation(pointCounts, thresholds, targets)
+     elif globals.payoff_metric == 'accuracy':
+         return calculateAccuracy(pointCounts, thresholds, targets)
+     else:
+         assert False, f'Unsupported metric {globals.payoff_metric}'
+  
 
 def calculateImpResults(pointCounts : np.ndarray, thresholds : np.ndarray, scores : np.ndarray) -> np.ndarray:
    # PointCounts is an N x V matrix containing the point count for each of N deals
@@ -112,24 +125,24 @@ def runSimulatedMatch(pointCounts : np.ndarray, thresholds : np.ndarray, scores 
 
 # not current used but may wish to incorporate later
 def analyzeMatchResults(recapSheet : np.ndarray):
-    categories = [int(x * 2 + y) for x, y in zip(globals.vulnerabilities, globals.targets)]   
+    categories = [int(x * 2 + y) for x, y in zip(globals.deals.getVulnerabilities(), globals.deals.getTargets())]   
     return pd.DataFrame( {'good_game_nv' :
-            sum((recapSheet > 0) * np.array([x == 1 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet > 0) * np.array([x == 1 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'good_stop_nv':
-            sum((recapSheet > 0) * np.array([x == 0 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet > 0) * np.array([x == 0 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'good_game_vul':
-            sum((recapSheet > 0) * np.array([x == 3 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet > 0) * np.array([x == 3 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'good_stop_vul':
-            sum((recapSheet > 0) * np.array([x == 2 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet > 0) * np.array([x == 2 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'underbid_nv':
-            sum((recapSheet < 0) * np.array([x == 1 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet < 0) * np.array([x == 1 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'overbid_nv':
-            sum((recapSheet < 0) * np.array([x == 0 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet < 0) * np.array([x == 0 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'underbid_vul':
-            sum((recapSheet < 0) * np.array([x == 3 for x in categories]).reshape(globals.number_of_deals, 1)),
+            sum((recapSheet < 0) * np.array([x == 3 for x in categories]).reshape(globals.deals.number_of_deals, 1)),
         'overbid_vul':
-            sum((recapSheet < 0) * np.array([x == 2 for x in categories]).reshape(globals.number_of_deals, 1))},
-        index = globals.getVectorNames())
+            sum((recapSheet < 0) * np.array([x == 2 for x in categories]).reshape(globals.deals.number_of_deals, 1))},
+        index = globals.vectors.getVectorNames())
            
 def calculateSuccessesByPointCount(targets : np.ndarray, pointCounts : np.ndarray) -> pd.core.frame.DataFrame:
     # Targets an n-element List specifying whether each deal makes 3NT
@@ -142,7 +155,7 @@ def calculateSuccessesByPointCount(targets : np.ndarray, pointCounts : np.ndarra
         pd.DataFrame.from_dict(Counter(pointCounts.flatten()), orient='index', columns=['totals'])],
         axis = 1).fillna(0).drop(0).sort_index(ascending=False)
     # drop rows where we have few samples
-    outcomes.drop(outcomes[outcomes.totals <  .2 * globals.number_of_deals / len(outcomes)].index, inplace = True)
+    outcomes.drop(outcomes[outcomes.totals <  .2 * globals.deals.number_of_deals / len(outcomes)].index, inplace = True)
     return pd.Series( outcomes.apply(lambda row: row.makes / row.totals, axis = 1))
 
 
@@ -188,7 +201,7 @@ def bumpUp(vector : List[int], ordered_set : List[int], index : int, minValue : 
     if index < len(ordered_set):
         feature = ordered_set[index]
         if new_vector[feature] < minValue:
-            if feature in globals.fixed_features:
+            if feature in globals.features.getFixedFeatures():
                 new_vector = []
             else:
                 new_vector = adjustFeature(new_vector, feature, minValue - new_vector[feature])
@@ -201,7 +214,7 @@ def bumpDown(vector : List[int], ordered_set : List[int], index : int, maxValue 
     if index >= 0:
         feature = ordered_set[index]
         if new_vector[feature]> maxValue:
-            if feature in globals.fixed_features:
+            if feature in globals.features.getFixedFeatures():
                 new_vector = []
             else:
                 new_vector = adjustFeature(new_vector, feature, maxValue - new_vector[feature])
@@ -214,18 +227,18 @@ def adjustFeature(vector : List[int], feature : int, increment : int) -> List[in
     # if it returns an empty vector, the adjustment could not be made because of contraints
     
     # ignore fixed features
-    if feature in globals.fixed_features:
+    if feature in globals.features.getFixedFeatures():
         return []
     
     new_vector = vector.copy()
     new_vector[feature] += increment
-    globals.debug(f'Adjusting {globals.getFeatureName(feature)} by {increment}, old={vector[feature]}, new={new_vector[feature]}')
+    log.debug(f'Adjusting {globals.features.getFeatureName(feature)} by {increment}, old={vector[feature]}, new={new_vector[feature]}')
     
     # get applicable ordered sets
-    ordered_sets1 = list(filter(lambda k: feature in k, globals.features_ordered_by_high_cards))
-    ordered_sets2 = list(filter(lambda k: feature in k, globals.features_ordered_by_length))
-    assert len(ordered_sets1) == 1, f'No single high-card-based ordered set for {globals.getFeatureName(feature)} ({feature})'
-    assert len(ordered_sets2) == 1, f'No single length-based ordered set for {globals.getFeatureName(feature)} ({feature})'
+    ordered_sets1 = list(filter(lambda k: feature in k, globals.features.getFeaturesOrderedByHighCards()))
+    ordered_sets2 = list(filter(lambda k: feature in k, globals.features.getFeaturesOrderedByLength()))
+    assert len(ordered_sets1) == 1, f'No single high-card-based ordered set for {globals.features.getFeatureName(feature)} ({feature})'
+    assert len(ordered_sets2) == 1, f'No single length-based ordered set for {globals.features.getFeatureName(feature)} ({feature})'
     ordered_set1 = ordered_sets1[0]
     ordered_set2 = ordered_sets2[0]
     
@@ -243,14 +256,13 @@ def adjustFeature(vector : List[int], feature : int, increment : int) -> List[in
     return new_vector
 
 def takeBabyStep(vector : List[int], payoff : float, threshold : np.ndarray,
-          targets : pd.core.frame.DataFrame, payoff_function, increment : int) -> Tuple[bool, List[int], float]:
+          targets : pd.core.frame.DataFrame, increment : int) -> Tuple[bool, List[int], float]:
     # Vector is an M-element list of feature weights
     # Payoff is the current best payoff we are trying to beat
     # Thresholds is an N x 1 matrix of thresholds  
     #   It represents the point count for which we predict 3NT is makable.
     # Targets is an N x 2 DataFrame. Which column will be used by the learning algorithm
     #   depends on which payoff function we use
-    # Payoff_function calculates the particular payoff we wish to maximize
     # Increment is the amount by which we try changes in feature waits
     #
     # The output of this method is a tuple, consisting of a boolean indicating whether
@@ -266,7 +278,7 @@ def takeBabyStep(vector : List[int], payoff : float, threshold : np.ndarray,
     vectors_to_try = list(filter(lambda v: len(v) > 0, 
         [adjustFeature(bestVector, n, increment) for n in range(len(bestVector))] + 
         [adjustFeature(bestVector, n, -increment) for n in range(len(bestVector))]))
-    newPayoffs = payoff_function(calculatePointCount(globals.getFeatures(), vectors_to_try),
+    newPayoffs = calculatePayoff(calculatePointCount(globals.deals.getFeatures(), vectors_to_try),
         threshold, targets)
     
     # see if we have a winner
@@ -275,40 +287,39 @@ def takeBabyStep(vector : List[int], payoff : float, threshold : np.ndarray,
         bestPayoff = max(newPayoffs)
         bestVector = list(vectors_to_try[newPayoffs.index(bestPayoff)])
  
-        globals.info(f'{"Raising" if sum(bestVector) > sum(vector) else "Lowering"} weight ' +
-             f'for {globals.compareVectors(vector, bestVector)}')
+        log.info(f'{"Raising" if sum(bestVector) > sum(vector) else "Lowering"} weight ' +
+             f'for {globals.vectors.compareVectors(vector, bestVector)}')
         
     return (modified, bestVector, bestPayoff)
 
 def learn(vector : List[int], pointCounts : np.ndarray, threshold : np.ndarray,
-          targets : pd.core.frame.DataFrame, payoff_function, starting_increment = 1) -> Tuple[List[int], float]:
+          targets : pd.core.frame.DataFrame, starting_increment = STARTING_INCREMENT) -> Tuple[List[int], float]:
     # Vector is an M-element list of feature weights
     # PointCounts is an N x 1 matrix containing the point count for each of N deals
     # Thresholds is an N x 1 matrix of thresholds  
     #   It represents the point count for which we predict 3NT is makable.
     # Targets is an N x 2 DataFrame. Which column will be used by the learning algorithm
     #   depends on which payoff function we use
-    # Payoff_function calculates the particular payoff we wish to maximize
     # Starting_increment is an optional parameter that permits us to start with an increment
     #   greater than one and reduce the increment as we get closer to a solution
     #
     # The output of this method is a tuple, consisting of a new vector of weights and
     #   the accuracy of that vector
     currentVector = vector.copy()
-    currentPayoff = payoff_function(pointCounts, threshold, targets)[0]
-    globals.info(f'iteration 0: vector={currentVector}, payoff={currentPayoff}')
+    currentPayoff = calculatePayoff(pointCounts, threshold, targets)[0]
+    log.info(f'iteration 0: vector={currentVector}, payoff={currentPayoff}')
 
     increment = starting_increment
     for i in range(MAX_ITERATIONS):
         modified, currentVector, currentPayoff = takeBabyStep(currentVector, currentPayoff, 
-            threshold, targets, payoff_function, increment)
+            threshold, targets, increment)
         if not modified:
             if increment == 1:
                 break
             else:
-                increment -= 1
+                increment = int((increment + 1) / 2.0)
                 print(f'iteration {i+1}:, No change - reducing increment to {increment}')
                 continue
-        globals.info(f'iteration {i+1}:, vector={currentVector}, payoff={currentPayoff}')
+        log.info(f'iteration {i+1}:, vector={currentVector}, payoff={currentPayoff}')
     return currentVector, currentPayoff
    

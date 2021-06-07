@@ -4,17 +4,19 @@ Created on Wed May 19 08:33:55 2021
 
 @author: sarab
 """
-import numpy as np
-import globals
-import engine
 from typing import List
+
+import engine
+import globals
+import log
+
 
 currentVectorIndex = -1
 vectorFileIsDirty = False
 
 def getCurrentVector() -> List[int]:
     if currentVectorIndex >= 0:
-        return globals.getVectorTableRow(currentVectorIndex).Vector.copy()
+        return globals.vectors.getVectorTableRow(currentVectorIndex).Vector.copy()
     else:
         print('Error: current vector has not been set')
         return None
@@ -24,12 +26,12 @@ def setCurrentVector(index : int) -> bool:
     global currentVectorIndex
     try:
         index = int(index)
-        if index not in range(globals.number_of_vectors):
+        if index not in range(globals.vectors.number_of_vectors):
             print(f'index {index} is out of range')
             return False
         else:
             currentVectorIndex = index
-            globals.info(f'Setting current vector to {globals.getVectorName(index)}')
+            log.info(f'Setting current vector to {globals.vectors.getVectorName(index)}')
             return True
     except ValueError:
         print('Vector index must be an integer')
@@ -55,22 +57,22 @@ def selectVectors(*args):
         else:
             vectors = [getCurrentVector()]
             vectorIndices = [currentVectorIndex]
-            thresholds = globals.getThresholds(metric)[:,currentVectorIndex].reshape(-1,1)
-            print(f'Running against {globals.getVectorNames()[currentVectorIndex]}')
+            thresholds = globals.vectors.getThresholds(metric)[:,currentVectorIndex].reshape(-1,1)
+            print(f'Running {args[0]} command against {globals.vectors.getVectorNames()[currentVectorIndex]}')
             
     # all vectors
     else:
         if args[1] == '*':
-            vectors = globals.getVectors()
-            vectorIndices = range(globals.number_of_vectors)
-            thresholds = globals.getThresholds(metric)
-            print('Running against all vectors')
+            vectors = globals.vectors.getVectors()
+            vectorIndices = range(globals.vectors.number_of_vectors)
+            thresholds = globals.vectors.getThresholds(metric)
+            print(f'Running {args[0]} command against all vectors')
             
     if len(vectors) == 0:
         print('Invalid parameter')
         return list(), None, None
     else:
-        return vectorIndices, thresholds, engine.calculatePointCount(globals.getFeatures(), vectors)
+        return vectorIndices, thresholds, engine.calculatePointCount(globals.deals.getFeatures(), vectors)
 
 #-----------
 #   Console commands
@@ -84,17 +86,17 @@ def processI(*args):
         
     if len(args) > 1:
         if (args[1] == '*'):
-            vectorNumbers = range(0, globals.number_of_vectors)
+            vectorNumbers = range(0, globals.vectors.number_of_vectors)
                  
     for n in vectorNumbers:
-        row = globals.vector_table.iloc[n]
-        globals.info(f'*** Info for {globals.getVectorNames()[n]} ***\n{row}\n')
+        row = globals.vectors._vectorTable.iloc[n]
+        log.info(f'*** Info for {globals.vectors.getVectorNames()[n]} ***\n{row}\n')
 
 # V - list all vectors or set current vector
 def processV(*args):
     # if no argument specified, list all vectors
     if len(args) == 1:
-        globals.listVectors()
+        globals.vectors.listVectors()
     # else change current vector
     else:
         if setCurrentVector(args[1]):
@@ -107,7 +109,7 @@ def processW(*args):
     fileName = ''
     if len(args) > 1:
         fileName = args[1]
-    vectorFileIsDirty =  not globals.saveVectorFile(fileName)
+    vectorFileIsDirty =  not globals.vectors.saveVectorFile(fileName)
 
 # F - display or edit feature
 def processF(*args):
@@ -121,9 +123,9 @@ def processF(*args):
     
     try:
         if len(args) > 1:
-            feature = globals.getFeatureNumber(args[1])
+            feature = globals.features.getFeatureNumber(args[1])
         if (len(args) > 2) and (feature >= 0):
-            if feature in globals.fixed_features:
+            if feature in globals.features.getFixedFeatures():
                 print('cannot modify fixed feature')
             else:
                 increment = int(args[2]) - getCurrentVector()[feature]
@@ -138,9 +140,9 @@ def processF(*args):
         else:
             vectorFileIsDirty = True
             oldVector = getCurrentVector()
-            globals.setVector(currentVectorIndex, engine.adjustFeature(getCurrentVector(), feature, increment))
-            globals.info(f'updated {args[1]} to {args[2]} ')
-            globals.info(f'columns changed = {globals.compareVectors(oldVector, getCurrentVector())}')
+            globals.vectors.setVector(currentVectorIndex, engine.adjustFeature(getCurrentVector(), feature, increment))
+            log.info(f'updated {args[1]} to {args[2]} ')
+            log.info(f'columns changed = {globals.vectors.compareVectors(oldVector, getCurrentVector())}')
 
 # S - save
 def processS(*args):
@@ -151,14 +153,14 @@ def processS(*args):
     if len(args) < 2:
         print('Must specify a new name')
         return
-    if args[1] in globals.getVectorNames():
+    if args[1] in globals.vectors.getVectorNames():
         print(f'Vector {args[1]} already exists')
         return
     
     vectorFileIsDirty = True
-    globals.setVectorTableRow(args[1], globals.getVectorTableRow(currentVectorIndex).copy(deep=False))
-    globals.info(f'Current vector saved as {args[1]}')
-    setCurrentVector(globals.number_of_vectors - 1)
+    globals.vectors.setVectorTableRow(args[1], globals.vectors.getVectorTableRow(currentVectorIndex).copy(deep=False))
+    log.info(f'Current vector saved as {args[1]}')
+    setCurrentVector(globals.vectors.number_of_vectors - 1)
     
 # D - delete vector
 def processD(*args):
@@ -166,62 +168,67 @@ def processD(*args):
     if currentVectorIndex < 0:
         print('Must set current vector before deleting')
         return
-         
-    if input(f'Delete vector {globals.getVectorName(currentVectorIndex)}? (y or n): ').upper() == 'Y':
-        globals.deleteVector(currentVectorIndex)
-        globals.info(f'Vector {globals.getVectorName(currentVectorIndex)} deleted')
+    
+    vectorName = globals.vectors.getVectorName(currentVectorIndex) 
+    if input(f'Delete vector {vectorName}? (y or n): ').upper() == 'Y':
+        globals.vectors.deleteVector(currentVectorIndex)
+        log.info(f'Vector {vectorName} deleted')
         currentVectorIndex = -1
     else:
         print('Aborting delete')
         
 # M - change metric
 def processM(*args):
+    success = False
     if len(args) > 1:
         newMetric = args[1].upper();
         if newMetric == 'A':
-            return globals.initializeMetric('accuracy')
+            success = globals.initializeMetric('accuracy')
         elif newMetric == 'E':
-            return globals.initializeMetric('expectation')
-    print('must specify "a" or "e" for new metric')
-    return False
+            success = globals.initializeMetric('expectation')
+    if success:
+        print (f'Metric changed to {globals.payoff_metric}')
+    else:
+        print('must specify "a" or "e" for new metric')
+    return success
             
 # A - accuracy
 def processA(*args):
     global vectorFileIsDirty
     vectorIndices, thresholds, pointCounts = selectVectors(*args)
     
-    if any(globals.vector_table.Vul_threshold[vectorIndices] == 0):
+    if any(globals.vectors._vectorTable.Vul_threshold[vectorIndices] == 0):
         print('Must run T command to update thresholds before calculating accuracy')
         return
     
     if len(vectorIndices) > 0:
-        accuracy = engine.calculateAccuracy(pointCounts, thresholds, globals.makes_3NT)
+        accuracy = engine.calculateAccuracy(pointCounts, thresholds, globals.deals.getMakes3NT())
         vectorFileIsDirty = True
         if len(vectorIndices) == 1:
-            globals.setAccuracy(accuracy[0], index = currentVectorIndex)
-            globals.info(f"{globals.vector_table.loc[globals.getVectorNames()[vectorIndices[0]], 'Accuracy']}")
+            globals.vectors.setAccuracy(accuracy[0], index = currentVectorIndex)
+            log.info(f"{globals.vectors._vectorTable.loc[globals.getVectorNames()[vectorIndices[0]], 'Accuracy']}")
         else:
-            globals.setAccuracy(accuracy)
-            globals.info(f"{globals.vector_table[['Accuracy']]}")
+            globals.vectors.setAccuracy(accuracy)
+            log.info(f"{globals.vectors._vectorTable[['Accuracy']]}")
 
 # X - expectations
 def processX(*args):
     global vectorFileIsDirty
     vectorIndices, thresholds, pointCounts = selectVectors(*args)
     
-    if any(globals.vector_table.Vul_threshold[vectorIndices] == 0):
+    if any(globals.vectors._vectorTable.Vul_threshold[vectorIndices] == 0):
         print('Must run T command to update thresholds before calculating expectations')
         return
     
     if len(vectorIndices) > 0:
-        expectation = engine.calculateExpectation(pointCounts, thresholds, globals.scores)
+        expectation = engine.calculateExpectation(pointCounts, thresholds, globals.deals.getScores())
         vectorFileIsDirty = True
         if len(vectorIndices) == 1:
-            globals.setExpectation(expectation[0], index = currentVectorIndex)
-            globals.info(f"{globals.vector_table.loc[globals.getVectorNames()[vectorIndices[0]], 'Expectation']}")
+            globals.vectors.setExpectation(expectation[0], index = currentVectorIndex)
+            log.info(f"{globals.vectors._vectorTable.loc[globals.vectors.getVectorNames()[vectorIndices[0]], 'Expectation']}")
         else:
-            globals.setExpectation(expectation)
-            globals.info(f"{globals.vector_table[['Expectation']]}")
+            globals.vectors.setExpectation(expectation)
+            log.info(f"{globals.vectors._vectorTable[['Expectation']]}")
         
 # T - update thresholds
 #   if two numbers are specified, update thresholds for current vector
@@ -235,16 +242,16 @@ def processT(*args):
     if len(args) > 1:
         if (args[1] == '*'):
             _, _, pointCounts = selectVectors(*args)
-            globals.setThresholds(engine.calculateAllThresholdsByVulnerability(
-                globals.makes_3NT, pointCounts))
-            globals.info(globals.vector_table[['Vul_threshold', 'Nv_threshold']])
+            globals.vectors.setThresholds(engine.calculateAllThresholdsByVulnerability(
+                globals.deals.getMakes3NT(), pointCounts))
+            log.info(globals.vectors._vectorTable[['Vul_threshold', 'Nv_threshold']])
             return
     
         # T X: zero out all thresholds
         if (args[1].upper() == 'X'):
             if 'Y' == input('Zero out vul thresholds for all vectors (y or N): ').upper():
-                globals.vector_table.Vul_threshold = 0
-                globals.info(globals.vector_table[['Vul_threshold', 'Nv_threshold']])
+                globals.vectors._vectorTable.Vul_threshold = 0
+                log.info(globals.vectors._vectorTable[['Vul_threshold', 'Nv_threshold']])
             else:
                 print('Aborting T command')
             return
@@ -256,7 +263,7 @@ def processT(*args):
     
     try:
         if len(args) > 2:
-             globals.setThresholds([int(x) for x in args[1:3]], currentVectorIndex)
+             globals.vectors.setThresholds([int(x) for x in args[1:3]], currentVectorIndex)
              # display info for new curent vector
              processI('I')
         else:
@@ -271,9 +278,9 @@ def processP(*args):
         print('Must set current vector before running this command')
         return
     
-    pointCount = engine.calculatePointCount(globals.getFeatures(), [getCurrentVector()])
-    globals.info(engine.calculateSuccessesByPointCount(
-        globals.makes_3NT, pointCount))
+    pointCount = engine.calculatePointCount(globals.deals.getFeatures(), [getCurrentVector()])
+    log.info(engine.calculateSuccessesByPointCount(
+        globals.deals.getMakes3NT(), pointCount))
 
 # L - learn
 def processL(*args):
@@ -281,17 +288,15 @@ def processL(*args):
         print('Must set current vector before running learning algorithm')
         return
      
-    if globals.vector_table.Vul_threshold[currentVectorIndex] == 0:
-        print('Must run T command to update thresholds before calculating expectations')
-        return
+    if globals.vectors._vectorTable.Vul_threshold[currentVectorIndex] == 0:
+        processT('T', '*')
     
     global vectorFileIsDirty
     vectorFileIsDirty = True
     _, thresholds, pointCounts = selectVectors(*args)
     
-    globals.info(f'Using payoff_metric={globals.payoff_metric}')
-    newVector, newPayoff = engine.learn(getCurrentVector(), pointCounts, thresholds,
-          globals.getTargets(), globals.getPayoffFunction())
+    log.info(f'Using payoff_metric={globals.payoff_metric}')
+    newVector, newPayoff = engine.learn(getCurrentVector(), pointCounts, thresholds, globals.deals.getTargets())
     globals.setVector(currentVectorIndex, newVector)
     globals.setPayoff(currentVectorIndex, newPayoff)
 
@@ -300,10 +305,10 @@ def processR(*args):
     global vectorFileIsDirty
     vectorFileIsDirty = True
     _, thresholds, pointCounts = selectVectors('R', '*')
-    percentDifferences, scores = engine.runSimulatedMatch(pointCounts, thresholds, globals.scores)                                                         
-    globals.setScores(scores)
-    globals.info(f'{percentDifferences * 100}% of boards were not flat')
-    globals.info(globals.vector_table.Score)
+    percentDifferences, scores = engine.runSimulatedMatch(pointCounts, thresholds, globals.deals.getScores())                                                         
+    globals.vectors.setScores(scores)
+    log.info(f'{percentDifferences * 100}% of boards were not flat')
+    log.info(globals.vectors._vectorTable.Score)
         
 def processH():
     print('Commands:')
@@ -397,7 +402,7 @@ def processCommand(command) -> bool:
     
     # C - comment
     elif operator == 'C':
-        globals.info(command[2:])
+        log.info(command[2:])
         
     # %X - calculate expections 
     elif operator == 'X':

@@ -6,6 +6,7 @@ Created on Thu May 13 21:44:02 2021
 """
 import pandas as pd
 import globals
+import log
 
 # append .csv to filename if we do not already have a valid extension
 def addDefaultExtension(fileName : str) -> str:
@@ -21,7 +22,7 @@ def writeFile(dataFrame : pd.core.frame.DataFrame, fileName : str, index=False) 
     fileName = addDefaultExtension(fileName)
     
     try:
-        globals.info(f'Writing {fileName}')
+        log.info(f'Writing {fileName}')
         if fileName[-4:] == '.csv':
            dataFrame.to_csv(fileName, index=index)
            return True
@@ -31,7 +32,7 @@ def writeFile(dataFrame : pd.core.frame.DataFrame, fileName : str, index=False) 
            return True
        
     except IOError as e:
-        globals.info(e)
+        log.info(e)
         
     return False
     
@@ -43,21 +44,21 @@ def readFile(fileName : str, index=False) ->  pd.core.frame.DataFrame:
     
     try:
         if fileName[-4:] == '.csv':
-            globals.info(f'Reading {fileName}')
+            log.info(f'Reading {fileName}')
             if index:
                 dataFrame = pd.read_csv(fileName, index_col=0)
             else:
                 dataFrame = pd.read_csv(fileName)
             
         elif fileName[-5:] == '.xlsx':
-            globals.info(f'Reading {fileName}')
+            log.info(f'Reading {fileName}')
             if index:
                 dataFrame = pd.read_excel(fileName)
             else:
                 dataFrame = pd.read_excel(fileName, index_col=0)
          
     except IOError as e:
-        globals.info(e)
+        log.info(e)
         
     return dataFrame
 
@@ -115,16 +116,16 @@ def readData(fileName : str) -> pd.core.frame.DataFrame:
         deals['s_C'] = deals.apply(lambda row: len(row.south) - row.south.index('C') - 3, axis = 1)
      
         # Features for both North and South   
-        for feature in globals.feature_names[:globals.first_special_feature]:  # special features are not honor holding
+        for feature in globals.features.getFeatureNames()[:globals.first_special_feature]:  # special features are not honor holding
             deals[feature] = deals.apply(lambda row: row.north.count(f':{feature} ') + row.south.count(f':{feature} '), axis = 1)
         
-        if '5422' in globals.feature_names:
+        if '5422' in globals.features.getFeatureNames():
             deals['5422'] = deals.apply(lambda row: 
                 int(row.n_S in [5, 4, 2] and row.n_H in [5, 4, 2] and row.n_D in [5, 4, 2] and row.n_C in [5, 4, 2])
                 + int(row.s_S in [5, 4, 2] and row.s_H in [5, 4, 2] and row.s_D in [5, 4, 2] and row.s_C in [5, 4, 2]),
                 axis = 1)
         
-        if '4333' in globals.feature_names:
+        if '4333' in globals.features.getFeatureNames():
             deals['4333'] = deals.apply(lambda row: 
                 int(row.n_S > 2 and row.n_H > 2 and row.n_D > 2 and row.n_C > 2) 
                 + int(row.s_S > 2 and row.s_H > 2 and row.s_D > 2 and row.s_C > 2),
@@ -132,7 +133,7 @@ def readData(fileName : str) -> pd.core.frame.DataFrame:
                                        
          
         # save processed data in a new file
-        writeFile(deals, fileName.replace('.csv', f'_{globals.feature_set}.csv').replace('.xslx', f'_{globals.feature_set}.xslx'))
+        writeFile(deals, fileName.replace('.csv', f'_{globals.features.getFeatureSetName()}.csv').replace('.xslx', f'_{globals.feature_set}.xslx'))
         
     return deals
 
