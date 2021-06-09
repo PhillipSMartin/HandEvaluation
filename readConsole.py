@@ -13,6 +13,7 @@ import log
 
 currentVectorIndex = -1
 vectorFileIsDirty = False
+interactive_mode = True
 
 def getCurrentVector() -> List[int]:
     if currentVectorIndex >= 0:
@@ -198,8 +199,7 @@ def processA(*args):
     vectorIndices, thresholds, pointCounts = selectVectors(*args)
     
     if any(globals.vectors._vectorTable.Vul_threshold[vectorIndices] == 0):
-        print('Must run T command to update thresholds before calculating accuracy')
-        return
+       processT('T', '*')
     
     if len(vectorIndices) > 0:
         accuracy = engine.calculateAccuracy(pointCounts, thresholds, globals.deals.getMakes3NT())
@@ -217,9 +217,8 @@ def processX(*args):
     vectorIndices, thresholds, pointCounts = selectVectors(*args)
     
     if any(globals.vectors._vectorTable.Vul_threshold[vectorIndices] == 0):
-        print('Must run T command to update thresholds before calculating expectations')
-        return
-    
+       processT('T', '*')
+     
     if len(vectorIndices) > 0:
         expectation = engine.calculateExpectation(pointCounts, thresholds, globals.deals.getScores())
         vectorFileIsDirty = True
@@ -336,7 +335,7 @@ def processH():
     print('   q - Quit')
 
 def processQ():
-    if vectorFileIsDirty:
+    if vectorFileIsDirty and interactive_mode:
         if 'N' != input('Save vector file before quitting? (Y or n): ').upper():
             print('Use "w" command to save file')
             return True
@@ -416,8 +415,11 @@ def processCommand(command) -> bool:
 
 # executes specified commands if passed - otherwise waits for input from console
 def readConsole(commands : str):
+    global interactive_mode
+    
     # if a command list is specified, execute commands in that list
-    if commands != '':
+    if commands is not None:
+        interactive_mode = False
         command_list = commands.split(',')
         for command in command_list:
             # return of False signals we are done
@@ -426,12 +428,11 @@ def readConsole(commands : str):
            
     # no command list, get console input
     else:
+         interactive_mode = True
          command = input('Enter h for help, q to quit, or any command:\n')
          while (processCommand(command)):
              command = input('Enter h for help, q to quit, or any command:\n')
             
-'''
-globals.initialize('1000_deals_balanced.csv','balanced')
-currentVectorIndex = 0
-processT('T', '*')
-'''
+if __name__ == "__main__":
+    globals.initialize('1000_deals_balanced.csv', 'balanced', logFlag = False) 
+    readConsole('t *,v,a *')

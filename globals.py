@@ -288,4 +288,4 @@ class Vectors:
               
 
 if __name__ == "__main__":
-    initialize('1000_deals_balanced.csv', log = False)    
+    initialize('1000_deals_balanced.csv', logFlag = False)    

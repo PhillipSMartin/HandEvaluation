@@ -9,6 +9,7 @@ from readConsole import readConsole
 from typing import List
 from traceback import print_tb
 
+import argparse
 import globals
 import log
 import os
@@ -16,64 +17,30 @@ import sys
 
 DEFAULT_FILE_NAME = '1000_deals_balanced.csv'
 DEFAULT_FEATURE_SET = 'balanced'
+DEFAULT_METRIC = 'expectation'
 
 # arguments are:
 #   fileName of data file (required)
 #   options:
 #       -v:<fileName >- vector file (csv of xlsx)
 #       -f:<featureSet> (defaults to balanced)
-#       -m:<payoff metric>('expectation' or 'accuracy' - defaults to 'expecation')
+#       -m:<payoff metric>('expectation' or 'accuracy' - defaults to 'expectation')
 #       -d - debug mode
 #       -q - quiet mode - no logging
-#       -l:<text> - text to add to log to identify this run
 #       -c:<text> - comma-delimited list of commands to execute
-def go(*args : List[str]):
-    fileName = ''
-    featureSet = 'balanced'
-    metric = 'expectation'
-    vectorFile = ''
-    logFlag = True
-    debugFlag = False
-    
-    commands = ''
-    comment = ''
-    
-    if len(args) > 0:
-        for arg in args:
-            if arg[0] != '-' and fileName == '':
-                fileName = arg
-            elif '-f:' in arg:
-                featureSet = arg[3:].lstrip()
-            elif '-m:' in arg:
-                metric = arg[3:].lstrip()
-            elif '-v:' in arg:
-                vectorFile = arg[3:].lstrip()
-            elif '-d' in arg:
-                debugFlag = True
-            elif '-q' in arg:
-                logFlag = False
-            elif '-l:' in arg and comment == '':
-                comment = arg[3:].lstrip()
-            elif '-c:' in arg and commands == '':
-                commands = arg[3:]
-            else:
-                print(f'Unknown parameter: {arg}')
-                return
-        
-    if fileName == '':
-        print('Error - no data file specified')
-        return
-    
-    if featureSet not in featureSets.keys():
-        print(f'Error - feature set {featureSet} not found')
-        return
- 
+def go(args):
+   
     try:
         # initialize global variables
-        if not globals.initialize(fileName, featureSet = featureSet or DEFAULT_FEATURE_SET, vectorFileName = vectorFile, metric = metric, logFlag = logFlag, debugFlag = debugFlag):
+        if not globals.initialize(args.fileName, 
+                featureSet = args.featureSet,
+                vectorFileName = args.vectors, 
+                metric = args.metric, 
+                logFlag = not args.quiet,
+                debugFlag = args.debug):
             print('Initialization failed - aborting')
         else:
-             readConsole(commands)
+             readConsole(args.commands)
              
     except Exception as e:
         log.info(e)
@@ -126,36 +93,59 @@ def buildArgs() -> List[str]:
             if not vectorFileOK:
                 print (f'File {vectorFile} does not exists')
               
-    debug = 'x'
-    while debug not in 'YN':
-        debug = input('Debug? (y or N): ').upper()
-        if debug == '':
-            debug = 'N'
+    debugFlag = 'x'
+    while debugFlag not in 'YN':
+        debugFlag = input('Debug? (y or N): ').upper()
+        if debugFlag == '':
+            debugFlag = 'N'
             
-    log = 'x'
-    while log not in 'YN':
-        log = input('Log? (y or N): ').upper()
-        if log == '':
-            log = 'N'
+    logFlag = 'x'
+    while logFlag not in 'YN':
+        logFlag = input('Log? (y or N): ').upper()
+        if logFlag == '':
+            logFlag = 'N'
             
     args = [fileName]
     if featureSet != '':
-        args.append(f'-f:{featureSet}')
+        args.extend(['-f', featureSet])
     if metric != '':
-        args.append(f'-m:{metric}')
+        args.extend(['-m', metric])
     if vectorFile != '':
-        args.append(f'-v:{vectorFile}')
-    if debug == 'Y':
+        args.extend(['-v', vectorFile])
+    if debugFlag == 'Y':
         args.append('-d')
-    if log == 'N':
+    if logFlag == 'N':
         args.append('-q')
     return args
-    
+   
 if __name__ == "__main__":
     
+    parser = argparse.ArgumentParser(
+        description = 'HCP evaluator')
+    parser.add_argument('fileName', 
+                        help='name of file containsing deals for learning or testing')
+    parser.add_argument('-v', '--vectors', 
+                        help='name of file with vectors to test - will use default vectors if omitted')
+    parser.add_argument('-f', '--featureSet', 
+                        choices=('flat', 'balanced', 'semi-balanced'),
+                        default=DEFAULT_FEATURE_SET, 
+                        help='name of feature set (balanced is default)')
+    parser.add_argument('-m', '--metric', 
+                        choices=('accuracy', 'expectation'),
+                        default=DEFAULT_METRIC, 
+                        help='Payoff metric (expectation is default)')
+    parser.add_argument('-c', '--commands', 
+                        help='comma-delimited list of commands to execute (interactive mode if omitted)')
+    parser.add_argument('-d', '--debug', 
+                        action='store_true', 
+                        help='debug mode')
+    parser.add_argument('-q', '--quiet', 
+                        action='store_true', 
+                        help='quiet mode (no log file created)')
+        
     if len(sys.argv) > 1:
-        go(*sys.argv[1:])
+        go(parser.parse_args())
     
     # if no arguments were passed, get console input
     else:
-        go(*buildArgs())
+        go(parser.parse_args(buildArgs()))
