@@ -206,7 +206,7 @@ def processA(*args):
         vectorFileIsDirty = True
         if len(vectorIndices) == 1:
             globals.vectors.setAccuracy(accuracy[0], index = currentVectorIndex)
-            log.info(f"{globals.vectors._vectorTable.loc[globals.getVectorNames()[vectorIndices[0]], 'Accuracy']}")
+            log.info(f"{globals.vectors._vectorTable.loc[globals.vectors.getVectorNames()[vectorIndices[0]], 'Accuracy']}")
         else:
             globals.vectors.setAccuracy(accuracy)
             log.info(f"{globals.vectors._vectorTable[['Accuracy']]}")
@@ -296,8 +296,8 @@ def processL(*args):
     
     log.info(f'Using payoff_metric={globals.payoff_metric}')
     newVector, newPayoff = engine.learn(getCurrentVector(), pointCounts, thresholds, globals.deals.getTargets())
-    globals.setVector(currentVectorIndex, newVector)
-    globals.setPayoff(currentVectorIndex, newPayoff)
+    globals.vectors.setVector(currentVectorIndex, newVector)
+    globals.vectors.setPayoff(currentVectorIndex, newPayoff)
 
 # R - run
 def processR(*args):

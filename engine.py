@@ -16,7 +16,7 @@ import pandas as pd
 VUL_PERCENTAGE_TARGET = .374
 NV_PERCENTAGE_TARGET = .455
 MAX_ITERATIONS = 500
-STARTING_INCREMENT = 10
+STARTING_INCREMENT = 1
 
 import numpy as np
 def calculatePointCount(features : np.ndarray, vectors : List[List[int]]) -> np.ndarray:
@@ -230,6 +230,7 @@ def adjustFeature(vector : List[int], feature : int, increment : int) -> List[in
     if feature in globals.features.getFixedFeatures():
         return []
     
+    
     new_vector = vector.copy()
     new_vector[feature] += increment
     log.debug(f'Adjusting {globals.features.getFeatureName(feature)} by {increment}, old={vector[feature]}, new={new_vector[feature]}')
@@ -255,6 +256,21 @@ def adjustFeature(vector : List[int], feature : int, increment : int) -> List[in
      
     return new_vector
 
+def featuresToIncrement() -> List[int]:
+    # if we are ignoring tens, we do not increment features that do have a ten. 
+    # Constraints will then ensure that all features with a
+    #  ten have the same weight if the ten is missing
+    return [x for x in range(globals.features.number_of_features)
+            if (not globals.IGNORE_TENS) or 'T' not in globals.features.getFeatureName(x)]
+ 
+def featuresToDecrement() -> List[int]:
+    # if we are ignoring tens, we do not decrement features that might have a ten 
+    # Constraints will then ensure that all features with a
+    #  ten have the same weight if the ten is missing
+    return [x for x in range(globals.features.number_of_features)
+            if (not globals.IGNORE_TENS) or 'T' in globals.features.getFeatureName(x) or 'x' not in globals.features.getFeatureName(x)]
+ 
+
 def takeBabyStep(vector : List[int], payoff : float, threshold : np.ndarray,
           targets : pd.core.frame.DataFrame, increment : int) -> Tuple[bool, List[int], float]:
     # Vector is an M-element list of feature weights
@@ -276,8 +292,8 @@ def takeBabyStep(vector : List[int], payoff : float, threshold : np.ndarray,
     #   incremented or decremented
     # some weights cannot be adjusted because of constraints, so we filter them out
     vectors_to_try = list(filter(lambda v: len(v) > 0, 
-        [adjustFeature(bestVector, n, increment) for n in range(len(bestVector))] + 
-        [adjustFeature(bestVector, n, -increment) for n in range(len(bestVector))]))
+        [adjustFeature(bestVector, n, increment) for n in featuresToIncrement()] + 
+        [adjustFeature(bestVector, n, -increment) for n in featuresToDecrement()]))
     newPayoffs = calculatePayoff(calculatePointCount(globals.deals.getFeatures(), vectors_to_try),
         threshold, targets)
     
@@ -315,6 +331,7 @@ def learn(vector : List[int], pointCounts : np.ndarray, threshold : np.ndarray,
             threshold, targets, increment)
         if not modified:
             if increment == 1:
+                print(f'iteration {i+1}:, No change - finished learning')
                 break
             else:
                 increment = int((increment + 1) / 2.0)

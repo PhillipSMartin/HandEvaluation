@@ -37,7 +37,8 @@ def go(args):
                 vectorFileName = args.vectors, 
                 metric = args.metric, 
                 logFlag = not args.quiet,
-                debugFlag = args.debug):
+                debugFlag = args.debug,
+                ignoreTens = args.ignoreTens):
             print('Initialization failed - aborting')
         else:
              readConsole(args.commands)
@@ -52,9 +53,7 @@ def go(args):
 def buildArgs() -> List[str]:
     fileNameOK = False
     while not fileNameOK:
-        fileName = input(f'Enter name of data file {DEFAULT_FILE_NAME}: ')
-        if fileName == '':
-            fileName = DEFAULT_FILE_NAME
+        fileName = input(f'Enter name of data file {DEFAULT_FILE_NAME}: ') or DEFAULT_FILE_NAME
         fileNameOK = os.path.isfile(fileName)
         if not fileNameOK:
             print (f'File {fileName} does not exists')
@@ -71,13 +70,17 @@ def buildArgs() -> List[str]:
             print(f'{featureSet} is not a valid feature set')
             print(f'valid feature sets are {featureSets.keys()}')
             featureSet = ''
+            
+    ignoreTens = 'x'
+    while ignoreTens not in 'YN':
+        ignoreTens = input('Ignore tens? (y or N): ').upper() or 'N'
        
     metric = ''
     while metric == '':
-        metric = input('Enter name of metric ("a" for accuracy, "E" for expectation): ')
+        metric = input('Enter name of metric ("a" for accuracy, "E" for expectation): ') or 'E'
         if metric.upper() == 'A':
             metric = 'accuracy'
-        elif metric.upper() == 'E' or metric == '':
+        elif metric.upper() == 'E':
             metric = 'expectation'
         else:
             print('Invalid metric')
@@ -85,7 +88,7 @@ def buildArgs() -> List[str]:
  
     vectorFileOK = False
     while not vectorFileOK:      
-        vectorFile = input('Enter name of vector file (or press enter for defaults): ')
+        vectorFile = input('Enter name of vector file (or press enter for defaults): ') 
         if vectorFile == '':
             vectorFileOK = True
         else:
@@ -95,15 +98,11 @@ def buildArgs() -> List[str]:
               
     debugFlag = 'x'
     while debugFlag not in 'YN':
-        debugFlag = input('Debug? (y or N): ').upper()
-        if debugFlag == '':
-            debugFlag = 'N'
+        debugFlag = input('Debug? (y or N): ').upper() or 'N'
             
     logFlag = 'x'
     while logFlag not in 'YN':
-        logFlag = input('Log? (y or N): ').upper()
-        if logFlag == '':
-            logFlag = 'N'
+        logFlag = input('Log? (y or N): ').upper() or 'N'
             
     args = [fileName]
     if featureSet != '':
@@ -112,6 +111,8 @@ def buildArgs() -> List[str]:
         args.extend(['-m', metric])
     if vectorFile != '':
         args.extend(['-v', vectorFile])
+    if ignoreTens == 'Y':
+        args.append('-t')
     if debugFlag == 'Y':
         args.append('-d')
     if logFlag == 'N':
@@ -120,8 +121,7 @@ def buildArgs() -> List[str]:
    
 if __name__ == "__main__":
     
-    parser = argparse.ArgumentParser(
-        description = 'HCP evaluator')
+    parser = argparse.ArgumentParser(description = 'HCP evaluator')
     parser.add_argument('fileName', 
                         help='name of file containsing deals for learning or testing')
     parser.add_argument('-v', '--vectors', 
@@ -129,7 +129,10 @@ if __name__ == "__main__":
     parser.add_argument('-f', '--featureSet', 
                         choices=('flat', 'balanced', 'semi-balanced'),
                         default=DEFAULT_FEATURE_SET, 
-                        help='name of feature set (balanced is default)')
+                        help='name of feature set (flat (4432 o4 4433), balanced (default, flat + 5332 or 5422), semi-balanced (balanced + 6332))')
+    parser.add_argument('-t', '--ignoreTens', 
+                        action='store_true', 
+                        help='Force tens to have a value of zero')
     parser.add_argument('-m', '--metric', 
                         choices=('accuracy', 'expectation'),
                         default=DEFAULT_METRIC, 

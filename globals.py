@@ -21,6 +21,7 @@ global payoff_metric
 VALID_METRICS = ['expectation', 'accuracy']
 DEFAULT_METRIC = 'expectation'
 LOG_FILE = 'HCP.log'
+IGNORE_TENS = False
 
 
 def initializeMetric(metric : str) :
@@ -33,13 +34,15 @@ def initializeMetric(metric : str) :
 #-----------
 
 # return False if method fails
-def initialize(dataFileName : str, featureSet : str, vectorFileName : str='', metric = DEFAULT_METRIC, logFlag : bool = True, debugFlag : bool = False):
+def initialize(dataFileName : str, featureSet : str, vectorFileName : str='', metric = DEFAULT_METRIC, logFlag : bool = True, debugFlag : bool = False, ignoreTens : bool = False):
     # dataFileName is required
     # if vectorFileName is blank, we will load a default vector table
     global features
     global deals
     global vectors
-     
+    global IGNORE_TENS
+    
+    IGNORE_TENS = ignoreTens
     log.initializeLogging(LOG_FILE, logFlag, debugFlag)
        
     try:
@@ -61,11 +64,6 @@ def cleanUp():
 #-----------
 
 class Features:
-    _featureSetName = ''
-    _featureSet = None
-     
-    number_of_features = 0
-    
     def __init__(self, feature_set_name : str, feature_set : Dict[str, Any]):
         self._featureSetName = feature_set_name
         self._featureSet = feature_set
@@ -116,10 +114,6 @@ class Features:
         return self._featureSet['features_ordered_by_length']
 
 class Deals:
-    _deals = None
-    
-    number_of_deals = 0
-    
     def __init__(self, fileName : str):
         self._deals = readData.readData(fileName)
         assert not self._deals.empty, f'Unable to read file {fileName}'
@@ -147,16 +141,13 @@ class Deals:
              assert False, f'Unsupported metric {payoff_metric}'
  
 class Vectors:
-    _vectorTable = None
-    _vectorFileName = ''
-   
-    number_of_vectors = 0
-    
     def __init__(self, source): # source an be a fileName or a DataFrame
         if type(source) == pd.core.frame.DataFrame:
-            self._vectorTable = source
+           self._vectorFileName = ''
+           self._vectorTable = source
         elif type(source) == str:
-            self.readFile(source)
+           self._vectorFileName = source
+           self.readFile(source)
         else:
             assert False, 'Vectors class contructor must be passed a DataFrame or a fileName'
         self.number_of_vectors = len(self._vectorTable)
